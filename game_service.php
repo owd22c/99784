@@ -1461,16 +1461,62 @@ function gohaoma_url($gameid, $game) {
 			$re['time'] = $starttime_tmp - $time;
 			return json_encode($re);
 		}
-	}*/
+	}
+	*/
 
 	$header = array(
-		'Expect: ',//头部送出 Expect: 可高速度
-		'Content-Type: application/json; charset=utf-8',//定义文档返回的类型
+		'Expect: ', //头部送出 Expect: 可高速度
+		'Content-Type: application/json; charset=utf-8', //定义文档返回的类型
 		'Content-Length: 0'
 	);
 	$xml_result = $result = fileget_content($url, '', '', $url, $header, 10);
 	$json = json_decode($result);
-	// var_dump($url);exit;
+
+	// 新API 采集适配
+	if (strpos($url, 'apigx.cn') !== false && isset($json->data) && is_array($json->data) && count($json->data) > 0) {
+		$firstData = $json->data[0];
+		$haomaarr = explode(',', trim($firstData->opencode));
+		$haoma = implode(',', array_map('intval', $haomaarr));
+		$idarr = $cfgarr[$game]['id'];
+		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($firstData->expect)));
+		$content['current']['sendtime'] = strtotime($firstData->opentime);
+		$content['current']['haoma'] = $haoma;
+
+		// 组装下期信息（用data[1]作为下一期，如果没有就+1，时间+210秒）
+		if (isset($json->data[1])) {
+			$nextData = $json->data[1];
+			$content['next']['qishu'] = htmlspecialchars(addslashes(trim($nextData->expect)));
+			$content['next']['sendtime'] = strtotime($nextData->opentime);
+		} else {
+			$content['next']['qishu'] = $content['current']['qishu'] + 1;
+			$content['next']['sendtime'] = strtotime($firstData->opentime) + 210;
+		}
+		foreach ($idarr as $id) {
+			$content['current']['gameid'] = $id;
+			$content['next']['gameid'] = $id;
+			sendhaoma($content);
+		}
+		$awardTime = date('Y-m-d H:i:s', $content['next']['sendtime']);
+		$awardTimeInterval = intval($content['next']['sendtime'] - $time);
+		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
+		if ($awardtime == 0) {
+			$re['state'] = 1;
+			$re['msg'] = '下一期正在开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = 5;
+			return json_encode($re);
+		} else {
+			$re['state'] = 1;
+			$re['msg'] = '下期于' . $awardTime . '开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
+			return json_encode($re);
+		}
+	}
+
+	// 
 	if(strpos($url,'api68.com') !== false){
 		if ($json->errorCode != 0 || !isset($json->errorCode)) {
 			$re['state'] = 1;
@@ -1485,6 +1531,23 @@ function gohaoma_url($gameid, $game) {
 		foreach($haomaarr as $v) {
 			$haoma .= intval($v).',';
 		}
+		$haoma = rtrim($haoma, ',');
+		$idarr = $cfgarr[$game]['id'];
+		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json->result->data->preDrawIssue)));
+		$content['current']['sendtime'] = $time;
+		$content['current']['haoma'] = $haoma;
+		$content['next']['qishu'] = htmlspecialchars(addslashes(trim($json->result->data->drawIssue)));
+		$content['next']['sendtime'] = strtotime($json->result->data->drawTime);
+		$awardTime = trim($json->result->data->drawTime);
+		$awardTimeInterval = intval(strtotime($awardTime) - $time);
+		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
+		// ... 其余处理与入库逻辑 ...
+		return json_encode($re);
+	}
+
+	// 
+	// ...
+}
 		$haoma = rtrim($haoma, ',');
 		$idarr = $cfgarr[$game]['id'];
 		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json->result->data->preDrawIssue)));//当前期号
