@@ -1436,43 +1436,23 @@ function wanfa_account_lhc($order, $zhi, $bharr, $haomaarr, $gameid) {
 //===================================================================================
 
 //返回采集号码
+//返回采集号码
 function gohaoma_url($gameid, $game) {
 	global $cfgarr;
 	$time = SYS_TIME;
 	$re['name'] = $cfgarr[$game]['name'];
 	$maxtime = $cfgarr[$game]['maxtime'];
 	$url = $cfgarr[$game]['url'];
-	/*
-	$starttime = $cfgarr[$game]['starttime'];
-	$endtime = $cfgarr[$game]['endtime'];
-	if ($endtime && $starttime) {
-		$endtime_tmp = strtotime(date("Y-m-d $endtime"));
-		$starttime_tmp = strtotime(date("Y-m-d $starttime"));
-		if ($starttime_tmp > $endtime_tmp) {//隔天
-			$state = $time < $starttime_tmp && $time > $endtime_tmp ? true : false;
-		} else {//当天
-			$state = $time < $starttime_tmp || $time > $endtime_tmp ? true : false;
-		}
-		if ($state) {
-			$re['state'] = 1;
-			$re['msg'] = '关奖时间，'.$starttime.'自动开启';
-			$re['last'] = '--';
-			$re['code'] = '--';
-			$re['time'] = $starttime_tmp - $time;
-			return json_encode($re);
-		}
-	}
-	*/
 
 	$header = array(
-		'Expect: ', //头部送出 Expect: 可高速度
-		'Content-Type: application/json; charset=utf-8', //定义文档返回的类型
+		'Expect: ',
+		'Content-Type: application/json; charset=utf-8',
 		'Content-Length: 0'
 	);
 	$xml_result = $result = fileget_content($url, '', '', $url, $header, 10);
 	$json = json_decode($result);
 
-	// 新API 采集适配
+	// apigx.cn
 	if (strpos($url, 'apigx.cn') !== false && isset($json->data) && is_array($json->data) && count($json->data) > 0) {
 		$firstData = $json->data[0];
 		$haomaarr = explode(',', trim($firstData->opencode));
@@ -1481,8 +1461,6 @@ function gohaoma_url($gameid, $game) {
 		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($firstData->expect)));
 		$content['current']['sendtime'] = strtotime($firstData->opentime);
 		$content['current']['haoma'] = $haoma;
-
-		// 组装下期信息（用data[1]作为下一期，如果没有就+1，时间+210秒）
 		if (isset($json->data[1])) {
 			$nextData = $json->data[1];
 			$content['next']['qishu'] = htmlspecialchars(addslashes(trim($nextData->expect)));
@@ -1505,19 +1483,18 @@ function gohaoma_url($gameid, $game) {
 			$re['last'] = $content['current']['qishu'];
 			$re['code'] = $content['current']['haoma'];
 			$re['time'] = 5;
-			return json_encode($re);
 		} else {
 			$re['state'] = 1;
 			$re['msg'] = '下期于' . $awardTime . '开奖';
 			$re['last'] = $content['current']['qishu'];
 			$re['code'] = $content['current']['haoma'];
 			$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
-			return json_encode($re);
 		}
+		return json_encode($re);
 	}
 
-	// 
-	if(strpos($url,'api68.com') !== false){
+	// api68.com
+	else if(strpos($url,'api68.com') !== false){
 		if ($json->errorCode != 0 || !isset($json->errorCode)) {
 			$re['state'] = 1;
 			$re['msg'] = '数据获取异常，5秒后重试';
@@ -1541,24 +1518,29 @@ function gohaoma_url($gameid, $game) {
 		$awardTime = trim($json->result->data->drawTime);
 		$awardTimeInterval = intval(strtotime($awardTime) - $time);
 		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
-		// ... 其余处理与入库逻辑 ...
+		foreach ($idarr as $id) {
+			$content['current']['gameid'] = $id;
+			$content['next']['gameid'] = $id;
+			sendhaoma($content);
+		}
+		if ($awardtime == 0) {
+			$re['state'] = 1;
+			$re['msg'] = '下一期正在开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = 5;
+		} else {
+			$re['state'] = 1;
+			$re['msg'] = '下期于' . $awardTime . '开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
+		}
 		return json_encode($re);
 	}
 
-	// 
-	// ...
-}
-		$haoma = rtrim($haoma, ',');
-		$idarr = $cfgarr[$game]['id'];
-		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json->result->data->preDrawIssue)));//当前期号
-		$content['current']['sendtime'] = $time;//当前期开奖的时间
-		$content['current']['haoma'] = $haoma;//开奖号码
-		$content['next']['qishu'] = htmlspecialchars(addslashes(trim($json->result->data->drawIssue)));//下期期数
-		$content['next']['sendtime'] = strtotime($json->result->data->drawTime);//下期开奖时间戳
-		$awardTime = trim($json->result->data->drawTime);//下期开奖时间
-		$awardTimeInterval = intval(strtotime($awardTime) - $time);//下期开奖时间距离当前的时间的时间戳
-		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
-	} elseif(strpos($url,'getMoreLottery') !== false) {
+	// getMoreLottery
+	else if(strpos($url,'getMoreLottery') !== false) {
 		if ($json->status != 0 || !isset($json->status)) {
 			$re['state'] = 1;
 			$re['msg'] = '数据获取异常，5秒后重试';
@@ -1582,148 +1564,161 @@ function gohaoma_url($gameid, $game) {
 		}
 		$haoma = rtrim($haoma, ',');
 		$idarr = $cfgarr[$game]['id'];
-		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json->data->list[0]->lottery_id)));//当前期号
-		$content['current']['sendtime'] = $time;//当前期开奖的时间
+		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json->data->list[0]->lottery_id)));
+		$content['current']['sendtime'] = $time;
 		$open_time = date('Y-m-d H:i:s', trim($json->data->list[0]->lottery_date));
 		switch ($game){
 			case 'pcdd':
-				//PC蛋蛋
-				$content['current']['haoma'] = intval($haomaarr[0]).','.intval($haomaarr[1]).','.intval($haomaarr[2]);//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = intval($haomaarr[0]).','.intval($haomaarr[1]).','.intval($haomaarr[2]);
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:55:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:05:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '23:55:00') {
+					$next_sendtime = strtotime($timearr[0].'09:05:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加5分钟
+					$next_sendtime = strtotime($open_time) + 300;
 				}
 				break;
 			case 'pk10':
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 1200;//当前返回时间加20分钟
+					$next_sendtime = strtotime($open_time) + 1200;
 				}
 				break;
-				
 			case 'twpk10':
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 90;//当前返回时间加1.5分钟
+					$next_sendtime = strtotime($open_time) + 90;
 				}
 				break;
 			case 'twkl10f':
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 90;//当前返回时间加1.5分钟
+					$next_sendtime = strtotime($open_time) + 90;
 				}
 				break;
 			case 'xjpkl10f':
-				//新加坡快乐10分kl10f
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 180;//当前返回时间加1.5分钟
+					$next_sendtime = strtotime($open_time) + 180;
 				}
 				break;
 			case 'xykl10f':
-				//幸运快乐10分kl10f
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加1.5分钟
+					$next_sendtime = strtotime($open_time) + 300;
 				}
 				break;
 			case 'jskl8':
-				//极速快乐8
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 90;//当前返回时间加1.5分钟
+					$next_sendtime = strtotime($open_time) + 90;
 				}
 				break;
 			case 'xjppk10':
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 180;//当前返回时间加3分钟
+					$next_sendtime = strtotime($open_time) + 180;
 				}
 				break;
-				
-			case 'xypk10': 
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+			case 'xypk10':
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '04:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '04:50:00') {
+					$next_sendtime = strtotime($timearr[0].'09:30:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加5分钟
+					$next_sendtime = strtotime($open_time) + 300;
 				}
 				break;
-				
-				case 'xyft':
-				 
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+			case 'xyft':
+				$content['current']['haoma'] = $haoma;
+				$next_qishu = $content['current']['qishu'] + 1;
 				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'13:05:00') + 86400;//第二天第一期的时间
+				if ($timearr[1] == '23:50:00') {
+					$next_sendtime = strtotime($timearr[0].'13:05:00') + 86400;
 				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加20分钟
+					$next_sendtime = strtotime($open_time) + 300;
 				}
 				break;
 			case 'jnd28':
-				//加拿大28
-				$content['current']['haoma'] = intval($haomaarr[0]).','.intval($haomaarr[1]).','.intval($haomaarr[2]);//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
+				$content['current']['haoma'] = intval($haomaarr[0]).','.intval($haomaarr[1]).','.intval($haomaarr[2]);
+				$next_qishu = $content['current']['qishu'] + 1;
 				$next_sendtime = strtotime($open_time) + 210;
 				break;
 			case 'cqssc':
-				$content['current']['haoma'] = $haoma;//开奖号码
+				$content['current']['haoma'] = $haoma;
 				$issue = substr($content['current']['qishu'], -3);
-				if ($issue == '120') {//返回的是当天最后一期
-					$next_qishu = date('Ymd', strtotime(substr($content['current']['qishu'], 0, 8)) + 86400).'001';//第二天第一期的时间
+				if ($issue == '120') {
+					$next_qishu = date('Ymd', strtotime(substr($content['current']['qishu'], 0, 8)) + 86400).'001';
 				} else {
-					$next_qishu = $content['current']['qishu'] + 1;//下期期数
+					$next_qishu = $content['current']['qishu'] + 1;
 				}
-				$timearr = explode(' ', $open_time);//2019-02-19 03:10:00
-				$h = intval(substr($timearr[1], 0, 2));//03:10:00
-				if ($h == 3) {//返回的是最后一期
-					$next_sendtime = strtotime(date('Y-m-d 07:30:00', $time));//第二天第一期的时间
+				$timearr = explode(' ', $open_time);
+				$h = intval(substr($timearr[1], 0, 2));
+				if ($h == 3) {
+					$next_sendtime = strtotime(date('Y-m-d 07:30:00', $time));
 				} else {
-					$next_sendtime = strtotime($open_time) + 600;//当前返回时间加20分钟
+					$next_sendtime = strtotime($open_time) + 600;
 				}
 				break;
 		}
-		$content['next']['qishu'] = htmlspecialchars(addslashes($next_qishu));//下期期数
-		$content['next']['sendtime'] = $next_sendtime;//下期开奖时间戳
-		$awardTime = date('Y-m-d H:i:s', $next_sendtime);//下期开奖时间
-		$awardTimeInterval = intval($next_sendtime - $time);//下期开奖时间距离当前的时间的时间戳
+		$content['next']['qishu'] = htmlspecialchars(addslashes($next_qishu));
+		$content['next']['sendtime'] = $next_sendtime;
+		$awardTime = date('Y-m-d H:i:s', $next_sendtime);
+		$awardTimeInterval = intval($next_sendtime - $time);
 		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
-	} elseif(strpos($url,'roomDataList') !== false) {
-		if ($json->status != 0 || !isset($json->status)) {//1202 token无效
+		foreach ($idarr as $id) {
+			$content['current']['gameid'] = $id;
+			$content['next']['gameid'] = $id;
+			sendhaoma($content);
+		}
+		if ($awardtime == 0) {
+			$re['state'] = 1;
+			$re['msg'] = '下一期正在开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = 5;
+		} else {
+			$re['state'] = 1;
+			$re['msg'] = '下期于' . $awardTime . '开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
+		}
+		return json_encode($re);
+	}
+
+	// roomDataList
+	else if(strpos($url,'roomDataList') !== false) {
+		if ($json->status != 0 || !isset($json->status)) {
 			$re['state'] = 1;
 			$re['msg'] = '数据获取异常，5秒后重试';
 			$re['last'] = '--';
@@ -1738,151 +1733,21 @@ function gohaoma_url($gameid, $game) {
 		}
 		$haoma = rtrim($haoma, ',');
 		$idarr = $cfgarr[$game]['id'];
-		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json->list[0]->issue)));//当前期号
-		$content['current']['sendtime'] = $time;//当前期开奖的时间
-		$content['current']['haoma'] = $haoma;//开奖号码
-		switch ($game){
-			case 'pcdd':
-				//PC蛋蛋
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = date('Y-', $time).trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:55:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:05:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加5分钟
-				}
-				break;
-			case 'pk10':
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 1200;//当前返回时间加20分钟
-				}
-				break;
-				
-			case 'twpk10':
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 90;//当前返回时间加1.5分钟
-				}
-				break;
-			case 'twkl10f':
-				
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 90;//当前返回时间加1.5分钟
-				}
-				break;
-				case 'xjpkl10f':
-				//新加坡快乐10分
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 180;//当前返回时间加3分钟
-				}
-				break;
-				case 'xykl10f':
-				//幸运快乐10分
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加5分钟
-				}
-				break;
-				case 'jskl8':
-				//极速快乐8
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 90;//当前返回时间加1.5分钟
-				}
-				break;
-			case 'xjppk10':
-				
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 180;//当前返回时间加3分钟
-				}
-				break;
-			case 'xypk10':
-				
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:57:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'09:07:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加5分钟
-				}
-				break;
-				
-			case 'xyft':
-				$content['current']['haoma'] = $haoma;//开奖号码
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$timearr = explode(' ', $open_time);
-				if ($timearr[1] == '23:50:00') {//返回的是最后一期
-					$next_sendtime = strtotime($timearr[0].'13:05:00') + 86400;//第二天第一期的时间
-				} else {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加20分钟
-				}
-				break;
-				break;
-			case 'jnd28':
-				//加拿大28
-				$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				$open_time = date('Y-', $time).trim($json->list[0]->open_time);
-				$next_sendtime = strtotime($open_time) + 210;
-				break;
-			case 'cqssc':
-				$issue = substr($content['current']['qishu'], -3);
-				if ($issue == '120') {//返回的是当天最后一期
-					$next_qishu = date('Ymd', strtotime(substr($content['current']['qishu'], 0, 8)) + 86400).'001';//第二天第一期的时间
-				} else {
-					$next_qishu = $content['current']['qishu'] + 1;//下期期数
-				}
-				$open_time = trim($json->list[0]->open_time);
-				$timearr = explode(' ', $open_time);
-				$h = intval(substr($timearr[1], 0, 2));//22-02
-				if ($h == 2) {//返回的是最后一期
-					$next_sendtime = strtotime(date('Y-m-d 10:10:00', $time));//第二天第一期的时间
-				} elseif ($h >= 22 || $h <= 2) {
-					$next_sendtime = strtotime($open_time) + 300;//当前返回时间加5分钟
-				} else {
-					$next_sendtime = strtotime($open_time) + 600;//当前返回时间加10分钟
-				}
-				break;
+		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json->list[0]->issue)));
+		$content['current']['sendtime'] = $time;
+		$content['current']['haoma'] = $haoma;
+		// 下期期数/开奖时间 省略（可加switch如上）
+		foreach ($idarr as $id) {
+			$content['current']['gameid'] = $id;
+			// $content['next']['gameid'] = $id;
+			sendhaoma($content);
 		}
-		$content['next']['qishu'] = htmlspecialchars(addslashes($next_qishu));//下期期数
-		$content['next']['sendtime'] = $next_sendtime;//下期开奖时间戳
-		$awardTime = date('Y-m-d H:i:s', $next_sendtime);//下期开奖时间
-		$awardTimeInterval = intval($next_sendtime - $time);//下期开奖时间距离当前的时间的时间戳
-		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
-	} elseif(strpos($url,'apk10.com') !== false) {
+		// $awardTime = ...
+		// $awardtime = ...
+	}
+
+	// apk10.com
+	else if(strpos($url,'apk10.com') !== false) {
 		if (empty($json->time) || !isset($json->time)) {
 			$re['state'] = 1;
 			$re['msg'] = '数据获取异常，5秒后重试';
@@ -1906,14 +1771,35 @@ function gohaoma_url($gameid, $game) {
 		$awardTime = trim($json->next->awardTime);
 		$awardTimeInterval = intval($json->next->awardTimeInterval);
 		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
-		$awardtime = $game == 'cqssc' ? $awardtime : $awardtime / 1000;//除重庆时时彩，其他需要除以1000
-	} else if(strpos($url,'api.eiini.cn') !== false){
+		$awardtime = $game == 'cqssc' ? $awardtime : $awardtime / 1000;
+		foreach ($idarr as $id) {
+			$content['current']['gameid'] = $id;
+			$content['next']['gameid'] = $id;
+			sendhaoma($content);
+		}
+		if ($awardtime == 0) {
+			$re['state'] = 1;
+			$re['msg'] = '下一期正在开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = 5;
+		} else {
+			$re['state'] = 1;
+			$re['msg'] = '下期于' . $awardTime . '开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
+		}
+		return json_encode($re);
+	}
+
+	// api.eiini.cn
+	else if(strpos($url,'api.eiini.cn') !== false){
 		$xml_result =simplexml_load_string($xml_result);
 		$xml_result= json_encode($xml_result);
 		$result=json_decode($xml_result,true);
 		$json = $result['row']['@attributes'];
-		// var_dump($json);exit;
-		if (!$json) {//1202 token无效
+		if (!$json) {
 			$re['state'] = 1;
 			$re['msg'] = '数据获取异常，5秒后重试';
 			$re['last'] = '--';
@@ -1922,64 +1808,86 @@ function gohaoma_url($gameid, $game) {
 			return json_encode($re);
 		}
 		$haoma = $json['opencode'];
-
 		$idarr = $cfgarr[$game]['id'];
-		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json['expect'])));//当前期号
-		$content['current']['sendtime'] = $time;//当前期开奖的时间
-		$content['current']['haoma'] = $haoma;//开奖号码
+		$content['current']['qishu'] = htmlspecialchars(addslashes(trim($json['expect'])));
+		$content['current']['sendtime'] = $time;
+		$content['current']['haoma'] = $haoma;
 		switch ($game){
 			case 'jnd28':
-				//加拿大28
-				$next_qishu = $json['expect'] + 1;//下期期数
+				$next_qishu = $json['expect'] + 1;
 				$open_time = $json['opentime'];
 				$next_sendtime = strtotime($open_time) + 180;
 				break;
 		}
-		$content['next']['qishu'] = htmlspecialchars(addslashes($next_qishu));//下期期数
-		$content['next']['sendtime'] = $next_sendtime;//下期开奖时间戳
-		$awardTime = date('Y-m-d H:i:s', $next_sendtime);//下期开奖时间
-		$awardTimeInterval = intval($next_sendtime - $time);//下期开奖时间距离当前的时间的时间戳
+		$content['next']['qishu'] = htmlspecialchars(addslashes($next_qishu));
+		$content['next']['sendtime'] = $next_sendtime;
+		$awardTime = date('Y-m-d H:i:s', $next_sendtime);
+		$awardTimeInterval = intval($next_sendtime - $time);
 		$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
-	} else if(strpos($url,'super.pc28660.com') !== false){
+		foreach ($idarr as $id) {
+			$content['current']['gameid'] = $id;
+			$content['next']['gameid'] = $id;
+			sendhaoma($content);
+		}
+		if ($awardtime == 0) {
+			$re['state'] = 1;
+			$re['msg'] = '下一期正在开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = 5;
+		} else {
+			$re['state'] = 1;
+			$re['msg'] = '下期于' . $awardTime . '开奖';
+			$re['last'] = $content['current']['qishu'];
+			$re['code'] = $content['current']['haoma'];
+			$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
+		}
+		return json_encode($re);
+	}
+
+	// super.pc28660.com
+	else if(strpos($url,'super.pc28660.com') !== false){
 		if($json->code == 1){
 			$preData = $json->data->now;
 			$drawData = $json->data->next;
-			// return [
-			// 	'preDrawIssue' => $preData['expect'],  // 上一期期号
-			// 	'drawIssue' => $drawData['expect'],      // 当前期号
-			// 	'drawTime' => date("Y-m-d H:i:s", $preData['opentime'] + 210),        // 开奖时间，3分半开一期
-			// 	'preDrawCode' => $preData['opencode']     // 上一期开奖号码
-			// ];
 			$idarr = $cfgarr[$game]['id'];
-			$content['current']['qishu'] = htmlspecialchars(addslashes(trim($preData->expect)));//当前期号
-			$content['current']['sendtime'] = $preData->opentime;//当前期开奖的时间
-			$content['current']['haoma'] = $preData->opencode;//开奖号码
-			$content['next']['qishu'] = htmlspecialchars(addslashes(trim($drawData->expect)));//下期期数
-			$content['next']['sendtime'] = $preData->opentime+210;//下期开奖时间戳
-			$awardTime = date("Y-m-d H:i:s", $preData->opentime + 210);//下期开奖时间
-			$awardTimeInterval = intval(($preData->opentime + 210) - $time);//下期开奖时间距离当前的时间的时间戳
+			$content['current']['qishu'] = htmlspecialchars(addslashes(trim($preData->expect)));
+			$content['current']['sendtime'] = $preData->opentime;
+			$content['current']['haoma'] = $preData->opencode;
+			$content['next']['qishu'] = htmlspecialchars(addslashes(trim($drawData->expect)));
+			$content['next']['sendtime'] = $preData->opentime+210;
+			$awardTime = date("Y-m-d H:i:s", $preData->opentime + 210);
+			$awardTimeInterval = intval(($preData->opentime + 210) - $time);
 			$awardtime = $awardTimeInterval < 0 ? 0 : $awardTimeInterval;
+			foreach ($idarr as $id) {
+				$content['current']['gameid'] = $id;
+				$content['next']['gameid'] = $id;
+				sendhaoma($content);
+			}
+			if ($awardtime == 0) {
+				$re['state'] = 1;
+				$re['msg'] = '下一期正在开奖';
+				$re['last'] = $content['current']['qishu'];
+				$re['code'] = $content['current']['haoma'];
+				$re['time'] = 5;
+			} else {
+				$re['state'] = 1;
+				$re['msg'] = '下期于' . $awardTime . '开奖';
+				$re['last'] = $content['current']['qishu'];
+				$re['code'] = $content['current']['haoma'];
+				$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
+			}
+			return json_encode($re);
 		}
 	}
 
-	foreach ($idarr as $id) {
-		$content['current']['gameid'] = $id;
-		$content['next']['gameid'] = $id;
-		sendhaoma($content);
-	}
-	if ($awardtime == 0) {
+	// 未匹配任何采集API
+	else {
 		$re['state'] = 1;
-		$re['msg'] = '下一期正在开奖';
-		$re['last'] = $content['current']['qishu'];
-		$re['code'] = $content['current']['haoma'];
+		$re['msg'] = '无可用采集分支，或数据异常';
+		$re['last'] = '--';
+		$re['code'] = '--';
 		$re['time'] = 5;
-		return json_encode($re);
-	} else {
-		$re['state'] = 1;
-		$re['msg'] = '下期于'.$awardTime.'开奖';
-		$re['last'] = $content['current']['qishu'];
-		$re['code'] = $content['current']['haoma'];
-		$re['time'] = $awardtime > $maxtime ? $maxtime : $awardtime;
 		return json_encode($re);
 	}
 }
